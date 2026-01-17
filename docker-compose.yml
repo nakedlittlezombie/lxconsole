@@ -1,0 +1,13 @@
+services:
+    lxconsole:
+        ports:
+            - ${PORT}:5000
+        container_name: lxconsole
+        env_file: 
+            - .env
+        environment:
+            - LXCONSOLE_SECRET_KEY=${LXCONSOLE_SECRET_KEY}
+        volumes:
+            - ${CERTS}:/opt/lxconsole/certs
+            - ${INSTANCE}:/opt/lxconsole/instance
+        image: nakedzombie/lxconsole:latest
