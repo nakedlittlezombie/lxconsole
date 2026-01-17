@@ -1,4 +1,4 @@
-FROM python:3.10.6
+FROM dhi.io/python:3.10-debian12
 
 RUN mkdir -p /opt/lxconsole
 
