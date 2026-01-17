@@ -1,1 +1,1 @@
-docker build --no-cache -t nakedzombie/lxconsole:latest .
+docker build --no-cache -t nakedzombie/lxconsole:$1 .
