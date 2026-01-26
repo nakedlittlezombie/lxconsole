@@ -3208,319 +3208,332 @@
       }
     }
 
-    // Setup websocket connection for console use
+
+    // Setup websocket connection for console use (via server-side proxy)
     function establishInstanceWebSocketConsoleConnection() {
       if ($("#consoleSwitch").is(":checked")){
-        $.get("{{ url_for('api') }}/instance/get_instance_websocket_host?id=" + serverId + "&project=" + project + "&instance=" + encodeURI(instance), function (data) {
-          console.log(data);
-          server_addr = data.addr
-          server_port = data.port
+        // VGA Console mode
+        $.post("{{ url_for('api') }}/instance/establish_instance_console_websocket?id=" + serverId + "&project=" + project + "&instance=" + encodeURI(instance) + "&type=vga", {
+          width: 0,
+          height: 0
+        }, function (data) {
+          console.log("VGA Console operation established:", data);
+          var operation = data.operation;
+          var controlSecret = data.control;
+          var dataSecret = data.secret;
 
-          if (data.proxy) 
-            wss_addr = data.proxy
-          else 
-            wss_addr = data.addr + ':' + data.port;
+          if(operation == "" || dataSecret == ""){
+            alert("Unable to establish VGA console operation");
+            return;
+          }
 
-          //Check to see if we can connect to the LXD server over a secure connection
-          fetch('https://' + wss_addr + '/1.0?addr=' + server_addr + '&port=' + data.port, { mode: 'no-cors' })
-          .then(response => {
-            //If we made it here then the self-signed LXD certificate would have been already trusted by the user's browser we can setup a secure websocket connection
-            $.post("{{ url_for('api') }}/instance/establish_instance_console_websocket?id=" + serverId + "&project=" + project + "&instance=" + encodeURI(instance) + "&type=vga", {
-              width: 0,
-              height: 0
-            }, function (data) {
-              console.log(data);
-              var operation = data.operation;
-              var consoleControlURL = "wss://" + wss_addr + operation + "/websocket?secret=" + data.control + "&addr=" + server_addr + "&port=" + server_port;
-              var consoleDataURL = "wss://" + wss_addr + operation + "/websocket?secret=" + data.secret + "&addr=" + server_addr + "&port=" + server_port;
-              console.log('dataURL='+ consoleDataURL)
+          var wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          var wsHost = window.location.host;
 
-              if(operation == "" && operationData.secret == ""){
-                alert("Unable to connect via websocket");
-                return;
+          var consoleControlURL = wsProtocol + "//" + wsHost + "/ws/vga/" + serverId + "/" + 
+              encodeURIComponent(project) + "/" + encodeURIComponent(instance) + 
+              "?operation=" + encodeURIComponent(operation) + 
+              "&secret=" + encodeURIComponent(controlSecret) + "&type=control";
+          
+          var consoleDataURL = wsProtocol + "//" + wsHost + "/ws/vga/" + serverId + "/" + 
+              encodeURIComponent(project) + "/" + encodeURIComponent(instance) + 
+              "?operation=" + encodeURIComponent(operation) + 
+              "&secret=" + encodeURIComponent(dataSecret) + "&type=data";
+
+          console.log("VGA Control URL:", consoleControlURL);
+          console.log("VGA Data URL:", consoleDataURL);
+
+          consoleGUIControlSocket = new WebSocket(consoleControlURL);
+
+          consoleGUIControlSocket.onerror = function (e) {
+            console.log("VGA Control WebSocket error:", e);
+          }
+
+          consoleGUIControlSocket.onopen = function (e) {
+            console.log("VGA Control WebSocket ReadyState: " + consoleGUIControlSocket.readyState);
+          };
+
+          consoleGUIControlSocket.onmessage = function (e) {
+            if (e.data instanceof ArrayBuffer) {
+              if (convertArrayBuffer2String(e.data) != null){
+                console.log(e.data);
               }
-              
-              //Create a new "control" websocket
-              consoleGUIControlSocket = new WebSocket(consoleControlURL);
+            }
+          };
 
-              //Listen for "control" websocket errors
-              consoleGUIControlSocket.onerror = function (e) {
-                console.log("There was a WebSocket error: " + e);
-              }
+          consoleGUIControlSocket.onclose = function (e) {
+            console.log("VGA Control WebSocket closed:", e);
+          };
 
-              //Listen for "control" websocket opening connection
-              consoleGUIControlSocket.onopen = function (e) {
-                console.log( "Console Control WebSocket ReadyState: " + consoleGUIControlSocket.readyState ); 
-              };
-      
-              //Listen for "control" websocket messages
-              consoleGUIControlSocket.onmessage = function (e) {      
-                if (e.data instanceof ArrayBuffer) {
-                  if (convertArrayBuffer2String(e.data) != null){
-                    console.log(e.data);
-                  }
-                }
-              };
+          // Connect to Spice GUI via proxy
+          connect(consoleDataURL);
 
-              //Listen for "control" websocket closing
-              consoleGUIControlSocket.onclose = function (e) {
-                console.log(e);
-              };
-
-              //Connect to Spice GUI
-              connect(consoleDataURL)
-
-            });
-
-          })
-          .catch((error) => {
-            console.log("Error: ", error)
-            //If we make it here then we had an error connection to LXD server. Most likely the Self-Signed Certificate is not yet trusted by the user's browser
-            data = 'There was an error connecting to your Incus/LXD server. <br />The LXD server may be using a self-signed certificate. <br />Click <a href="https://' + wss_addr + '?addr=' + server_addr + '&port=' + data.port + '" target="_blank">here</a> to accept the certificate if not yet trusted.';
-            $("#webSocketConnectionError").html(data);
-            $('#webSocketConnectionErrorModal').modal('show');
-          })
-
+        }).fail(function(jqXHR, textStatus, errorThrown) {
+          console.error("Failed to establish VGA console:", textStatus);
+          alert("Failed to establish VGA console: " + textStatus);
         });
+
       }
       else {
-        $.get("{{ url_for('api') }}/instance/get_instance_websocket_host?id=" + serverId + "&project=" + project + "&instance=" + encodeURI(instance), function (data) {
-          console.log(data);
-          server_addr = data.addr
-          server_port = data.port
+        // TTY Console mode
+        $.post("{{ url_for('api') }}/instance/establish_instance_console_websocket?id=" + serverId + "&project=" + project + "&instance=" + encodeURI(instance) + "&type=console", { 
+          width: consoleTerminal.cols,
+          height: consoleTerminal.rows
+        }, function (data) {
+          console.log("TTY Console operation established:", data);
+          var operation = data.operation;
+          var controlSecret = data.control;
+          var dataSecret = data.secret;
 
-          if (data.proxy) 
-            wss_addr = data.proxy
-          else 
-            wss_addr = data.addr + ':' + data.port;
+          if(operation == "" || dataSecret == ""){
+            alert("Unable to establish console operation");
+            return;
+          }
 
-          //Check to see if we can connect to the LXD server over a secure connection
-          fetch('https://' + wss_addr + '/1.0?addr=' + server_addr + '&port=' + data.port, { mode: 'no-cors' })
-          .then(response => {
-            //If we made it here then the self-signed LXD certificate would have been already trusted by the user's browser we can setup a secure websocket connection
-            $.post("{{ url_for('api') }}/instance/establish_instance_console_websocket?id=" + serverId + "&project=" + project + "&instance=" + encodeURI(instance) + "&type=console", { 
-              width: consoleTerminal.cols,
-              height: consoleTerminal.rows
-            }, function (data) {
-              console.log(data);
-              var operation = data.operation;
-              var consoleControlURL = "wss://" + wss_addr + operation + "/websocket?secret=" + data.control + "&addr=" + server_addr + "&port=" + server_port;
-              var consoleDataURL = "wss://" + wss_addr + operation + "/websocket?secret=" + data.secret + "&addr=" + server_addr + "&port=" + server_port;
+          var wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          var wsHost = window.location.host;
 
-              if(operation == "" && operationData.secret == ""){
-                alert("Unable to connect via websocket");
-                return;
+          var consoleControlURL = wsProtocol + "//" + wsHost + "/ws/console/" + serverId + "/" + 
+              encodeURIComponent(project) + "/" + encodeURIComponent(instance) + 
+              "?operation=" + encodeURIComponent(operation) + 
+              "&secret=" + encodeURIComponent(controlSecret) + "&type=control";
+
+          var consoleDataURL = wsProtocol + "//" + wsHost + "/ws/console/" + serverId + "/" + 
+              encodeURIComponent(project) + "/" + encodeURIComponent(instance) + 
+              "?operation=" + encodeURIComponent(operation) + 
+              "&secret=" + encodeURIComponent(dataSecret) + "&type=data";
+
+          console.log("Console Control URL:", consoleControlURL);
+          console.log("Console Data URL:", consoleDataURL);
+
+          consoleControlSocket = new WebSocket(consoleControlURL);
+
+          consoleControlSocket.onerror = function (e) {
+            console.log("Console Control WebSocket error:", e);
+          }
+
+          consoleControlSocket.onopen = function (e) {
+            console.log("Console Control WebSocket ReadyState: " + consoleControlSocket.readyState);
+          };
+
+          consoleControlSocket.onmessage = function (e) {
+            if (e.data instanceof ArrayBuffer) {
+              if (convertArrayBuffer2String(e.data) != null){
+                console.log(e.data);
               }
-              
-              //Create a new "control" websocket
-              consoleControlSocket = new WebSocket(consoleControlURL);
+            }
+          };
 
-              //Listen for "control" websocket errors
-              consoleControlSocket.onerror = function (e) {
-                console.log("There was a WebSocket error: " + e);
-              }
+          consoleControlSocket.onclose = function (e) {
+            console.log("Console Control WebSocket closed:", e);
+          };
 
-              //Listen for "control" websocket opening connection
-              consoleControlSocket.onopen = function (e) {
-                console.log( "Console Control WebSocket ReadyState: " + consoleControlSocket.readyState ); 
-              };
-      
-              //Listen for "control" websocket messages
-              consoleControlSocket.onmessage = function (e) {      
-                if (e.data instanceof ArrayBuffer) {
-                  if (convertArrayBuffer2String(e.data) != null){
-                    consoleTerminal.write(convertArrayBuffer2String(e.data));
-                  }
-                }
-              };
+          consoleDataSocket = new WebSocket(consoleDataURL);
 
-              //Listen for "control" websocket closing
-              consoleControlSocket.onclose = function (e) {
-                console.log(e);
-              };
+          consoleDataSocket.onerror = function (e) {
+            console.log("Console Data WebSocket error:", e);
+          }
 
-              //Create a new "data" websocket
-              consoleDataSocket = new WebSocket(consoleDataURL);
-                
-              //Listen for "data" websocket errors
-              consoleDataSocket.onerror = function (e) {
-                console.log("There was a WebSocket error: " + e);
-              }
+          consoleDataSocket.onopen = function (e) {
+            consoleDataSocket.binaryType = 'arraybuffer';
+            console.log("Console Data WebSocket ReadyState: " + consoleDataSocket.readyState);
 
-              //Listen for "data" websocket opening connection
-              consoleDataSocket.onopen = function (e) {
-                //Set binaryType to ArrayBuffer. This should be default value
-                consoleDataSocket.binaryType = 'arraybuffer';
-                
-                console.log( "Console Data WebSocket ReadyState: " + consoleDataSocket.readyState );
-                consoleTerminal.write("--- Secure Websocket Connection Opened --- \r\n");
-
-                //Send return to show login screen on console connections
-                setTimeout(() => { consoleDataSocket.send(convertString2ArrayBuffer('\r')); }, 1000);
-                
-                //Switch console action buttons
-                $("#startConsoleButton").hide();
-                $("#stopConsoleButton").show();
-                $('#consoleSwitch').attr("disabled", true);
-              };
-          
-              //Listen for "data" websocket messages
-              consoleDataSocket.onmessage = function (e) {   
-                if (e.data.length == 0) {
-                  consoleControlSocket.close();
-                  consoleDataSocket.close();
-                } else {   
-                  if (e.data instanceof ArrayBuffer) {
-                    if (convertArrayBuffer2String(e.data) != null){
-                      consoleTerminal.write(convertArrayBuffer2String(e.data));
-                    }
-                  }
-                }
-              };
-
-              //Listen for "data" websocket closing
-              consoleDataSocket.onclose = function (e) {
-                console.log(e);
-                consoleTerminal.write("\r\n--- Websocket Connection Closed ---\r\n");
-                $("#stopConsoleButton").hide();
-                $("#startConsoleButton").show();
-                $('#consoleSwitch').attr("disabled", false);
-              };
-
-            });
-
-          })
-          .catch((error) => {
-            console.log("Error: ", error)
-            //If we make it here then we had an error connection to LXD server. Most likely the Self-Signed Certificate is not yet trusted by the user's browser
-            data = 'There was an error connecting to your Incus/LXD server. <br />The LXD server may be using a self-signed certificate. <br />Click <a href="https://' + wss_addr + '?addr=' + server_addr + '&port=' + data.port + '" target="_blank">here</a> to accept the certificate if not yet trusted.';
-            $("#webSocketConnectionError").html(data);
-            $('#webSocketConnectionErrorModal').modal('show');
-          })
-
-        });
-
-      }
-
-    }
-
-    // Setup websocket connection for exec use
-    function establishInstanceWebSocketExecConnection() {
-      $.get("{{ url_for('api') }}/instance/get_instance_websocket_host?id=" + serverId + "&project=" + project + "&instance=" + encodeURI(instance), function (data) {
-        console.log(data);
-        server_addr = data.addr
-        server_port = data.port
-
-        if (data.proxy) 
-          wss_addr = data.proxy
-        else 
-          wss_addr = data.addr + ':' + data.port;
-
-        //Check to see if we can connect to the LXD server over a secure connection
-        fetch('https://' + wss_addr + '/1.0?addr=' + server_addr + '&port=' + server_port, { mode: 'no-cors' })
-        .then(response => {
-          //If we made it here then the self-signed LXD certificate would have been already trusted by the user's browser we can setup a secure websocket connection
-          $.post("{{ url_for('api') }}/instance/establish_instance_exec_websocket?id=" + serverId + "&project=" + project + "&instance=" + encodeURI(instance), { 
-            shell: $("#execShellInput").val(),
-            width: execTerminal.cols,
-            height: execTerminal.rows
-          }, function (data) {
-            console.log(data);
-            var operation = data.operation;
-            var execControlURL = "wss://" + wss_addr + operation + "/websocket?secret=" + data.control + "&addr=" + server_addr + "&port=" + server_port;
-            var execDataURL = "wss://" + wss_addr + operation + "/websocket?secret=" + data.secret + "&addr=" + server_addr + "&port=" + server_port;
-
-            if(operation == "" && data.secret == ""){
-              alert("Unable to connect via websocket");
-              return;
+            if (window.location.protocol !== "https:") {
+              consoleTerminal.write(
+                "\r\n\x1b[31m[SECURITY WARNING]\x1b[0m " +
+                "HTTP protocol detected. " +
+                "Terminal input/output may be intercepted between the web browser and LXConsole.\r\n\r\n"
+              );
+            }
+            else {
+              consoleTerminal.write("--- Secure WebSocket Connection Opened ---\r\n");
             }
             
-            //Create a new "control" websocket
-            execControlSocket = new WebSocket(execControlURL);
+            // Send return to show login screen
+            setTimeout(() => { consoleDataSocket.send(convertString2ArrayBuffer('\r')); }, 1000);
+            
+            $("#startConsoleButton").hide();
+            $("#stopConsoleButton").show();
+            $('#consoleSwitch').attr("disabled", true);
 
-            //Listen for "control" websocket errors
-            execControlSocket.onerror = function (e) {
-              console.log("There was a WebSocket error: " + e);
-            }
+            // Set focus in terminal after it connects
+            setTimeout(() => {
+              consoleTerminal.focus();
+            }, 50);
+          };
 
-            //Listen for "control" websocket opening connection
-            execControlSocket.onopen = function (e) {
-              console.log( "Exec Control WebSocket ReadyState: " + execControlSocket.readyState ); 
-            };
-    
-            //Listen for "control" websocket messages
-            execControlSocket.onmessage = function (e) {     
-              console.log(e) 
+          consoleDataSocket.onmessage = function (e) {
+            if (e.data.length == 0 || (e.data instanceof ArrayBuffer && e.data.byteLength == 0)) {
+              consoleControlSocket.close();
+              consoleDataSocket.close();
+            } else {
               if (e.data instanceof ArrayBuffer) {
                 if (convertArrayBuffer2String(e.data) != null){
-                  execTerminal.write(convertArrayBuffer2String(e.data));
+                  consoleTerminal.write(convertArrayBuffer2String(e.data));
                 }
-              }
-            };
-
-            //Listen for "control" websocket closing
-            execControlSocket.onclose = function (e) {
-              console.log(e);
-            };
-
-            //Create a new "data" websocket
-            execDataSocket = new WebSocket(execDataURL);
-              
-            //Listen for "data" websocket errors
-            execDataSocket.onerror = function (e) {
-              console.log("There was a WebSocket error: " + e);
-            }
-
-            //Listen for "data" websocket opening connection
-            execDataSocket.onopen = function (e) {
-              //Set binaryType to ArrayBuffer. This should be default value
-              execDataSocket.binaryType = 'arraybuffer';
-              
-              console.log( "Exec Data WebSocket ReadyState: " + execDataSocket.readyState );
-              execTerminal.write("--- Secure Websocket Connection Opened --- \r\n");
-
-              //Switch console action buttons
-              $("#startExecButton").hide();
-              $("#stopExecButton").show();
-            };
-        
-            //Listen for "data" websocket messages
-            execDataSocket.onmessage = function (e) {  
-              if (e.data.length == 0) {
-                execControlSocket.close();
-                execDataSocket.close();
-              }
-              else {    
-                if (e.data instanceof ArrayBuffer) {
-                  if (convertArrayBuffer2String(e.data) != null){
-                    execTerminal.write(convertArrayBuffer2String(e.data));
+              } else if (typeof e.data === 'string') {
+                try {
+                  var msg = JSON.parse(e.data);
+                  if (msg.type === 'error') {
+                    consoleTerminal.write("\r\n--- Error: " + msg.message + " ---\r\n");
+                    return;
                   }
-                }
+                } catch(err) {}
+                consoleTerminal.write(e.data);
               }
-            };
+            }
+          };
 
-            //Listen for "data" websocket closing
-            execDataSocket.onclose = function (e) {
-              console.log(e);
-              execTerminal.write("\r\n--- Websocket Connection Closed ---\r\n");
-              $("#stopExecButton").hide();
-              $("#startExecButton").show();
-            };
+          consoleDataSocket.onclose = function (e) {
+            console.log("Console Data WebSocket closed:", e);
+            consoleTerminal.write("\r\n--- WebSocket Connection Closed ---\r\n");
+            $("#stopConsoleButton").hide();
+            $("#startConsoleButton").show();
+            $('#consoleSwitch').attr("disabled", false);
+          };
 
-          });
-
-        })
-        .catch((error) => {
-          console.log("Error: ", error)
-          //If we make it here then we had an error connection to LXD server. Most likely the Self-Signed Certificate is not yet trusted by the user's browser
-          data = 'There was an error connecting to your Incus/LXD server. <br />The LXD server may be using a self-signed certificate. <br />Click <a href="https://' + wss_addr + '?addr=' + server_addr + '&port=' + data.port + '" target="_blank">here</a> to accept the certificate if not yet trusted.';
-          $("#webSocketConnectionError").html(data);
-          $('#webSocketConnectionErrorModal').modal('show');
-        })
-
-      });
-
+        }).fail(function(jqXHR, textStatus, errorThrown) {
+          console.error("Failed to establish console:", textStatus);
+          alert("Failed to establish console: " + textStatus);
+        });
+      }
     }
+
+
+    // Setup websocket connection for exec use (via server-side proxy)
+    function establishInstanceWebSocketExecConnection() {
+      // Establish exec operation with LXD through Flask API
+      $.post("{{ url_for('api') }}/instance/establish_instance_exec_websocket?id=" + serverId + "&project=" + project + "&instance=" + encodeURI(instance), { 
+        shell: $("#execShellInput").val(),
+        width: execTerminal.cols,
+        height: execTerminal.rows
+      }, function (data) {
+        console.log("Exec operation established:", data);
+        var operation = data.operation;
+        var controlSecret = data.control;
+        var dataSecret = data.secret;
+
+        if(operation == "" || dataSecret == ""){
+          alert("Unable to establish exec operation with LXD server");
+          return;
+        }
+
+        // Build WebSocket URLs through Flask proxy (not directly to LXD)
+        var wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        var wsHost = window.location.host;
+        
+        var execControlURL = wsProtocol + "//" + wsHost + "/ws/exec/" + serverId + "/" + 
+            encodeURIComponent(project) + "/" + encodeURIComponent(instance) + 
+            "?operation=" + encodeURIComponent(operation) + 
+            "&secret=" + encodeURIComponent(controlSecret) + "&type=control";
+        
+        var execDataURL = wsProtocol + "//" + wsHost + "/ws/exec/" + serverId + "/" + 
+            encodeURIComponent(project) + "/" + encodeURIComponent(instance) + 
+            "?operation=" + encodeURIComponent(operation) + 
+            "&secret=" + encodeURIComponent(dataSecret) + "&type=data";
+
+        console.log("Exec Control URL:", execControlURL);
+        console.log("Exec Data URL:", execDataURL);
+
+
+
+        // Create control websocket
+        execControlSocket = new WebSocket(execControlURL);
+
+        execControlSocket.onerror = function (e) {
+          console.log("Exec Control WebSocket error:", e);
+        }
+
+        execControlSocket.onopen = function (e) {
+          console.log("Exec Control WebSocket ReadyState: " + execControlSocket.readyState);
+        };
+
+        execControlSocket.onmessage = function (e) {
+          console.log("Control message:", e);
+          if (e.data instanceof ArrayBuffer) {
+            if (convertArrayBuffer2String(e.data) != null){
+              execTerminal.write(convertArrayBuffer2String(e.data));
+            }
+          }
+        };
+
+        execControlSocket.onclose = function (e) {
+          console.log("Exec Control WebSocket closed:", e);
+        };
+
+        // Create data websocket
+        execDataSocket = new WebSocket(execDataURL);
+
+        execDataSocket.onerror = function (e) {
+          console.log("Exec Data WebSocket error:", e);
+        }
+
+        execDataSocket.onopen = function (e) {
+          execDataSocket.binaryType = 'arraybuffer';
+          console.log("Exec Data WebSocket ReadyState: " + execDataSocket.readyState);
+
+          if (window.location.protocol !== "https:") {
+            execTerminal.write(
+              "\r\n\x1b[31m[SECURITY WARNING]\x1b[0m " +
+              "HTTP protocol detected. " +
+              "Terminal input/output may be intercepted between the web browser and LXConsole.\r\n\r\n"
+            );
+          }
+          else {
+            execTerminal.write("--- Secure WebSocket Connection Opened ---\r\n");
+          }
+
+          $("#startExecButton").hide();
+          $("#stopExecButton").show();
+
+          // Set focus in terminal after it connects
+          setTimeout(() => {
+            execTerminal.focus();
+          }, 50);
+        };
+
+        execDataSocket.onmessage = function (e) {
+          if (e.data.length == 0 || (e.data instanceof ArrayBuffer && e.data.byteLength == 0)) {
+            execControlSocket.close();
+            execDataSocket.close();
+          }
+          // LXD can produce empty frames; do NOT treat them as disconnect signals.
+          if ((typeof e.data === "string" && e.data.length === 0) ||
+              (e.data instanceof ArrayBuffer && e.data.byteLength === 0)) {
+            return;
+          }
+          else {
+            if (e.data instanceof ArrayBuffer) {
+              if (convertArrayBuffer2String(e.data) != null){
+                execTerminal.write(convertArrayBuffer2String(e.data));
+              }
+            } else if (typeof e.data === 'string') {
+              // Check for proxy error messages
+              try {
+                var msg = JSON.parse(e.data);
+                if (msg.type === 'error') {
+                  execTerminal.write("\r\n--- Error: " + msg.message + " ---\r\n");
+                  return;
+                }
+              } catch(err) {}
+              execTerminal.write(e.data);
+            }
+          }
+        };
+
+        execDataSocket.onclose = function (e) {
+          console.log("Exec Data WebSocket closed:", e);
+          execTerminal.write("\r\n--- WebSocket Connection Closed ---\r\n");
+          $("#stopExecButton").hide();
+          $("#startExecButton").show();
+        };
+
+      }).fail(function(jqXHR, textStatus, errorThrown) {
+        console.error("Failed to establish exec operation:", textStatus, errorThrown);
+        alert("Failed to establish exec connection: " + textStatus);
+      });
+    }
+
 
     // Close websocket connection for console user
     function closeWebSocketConsoleConnection() {

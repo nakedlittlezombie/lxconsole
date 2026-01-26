@@ -7,7 +7,7 @@ import secrets
 
 app = Flask(__name__)
 
-#Set SECRET_KEY from env if exists
+# Set SECRET_KEY from env if exists
 secret_key = os.environ.get('LXCONSOLE_SECRET_KEY')
 if not secret_key:
     secret_key = secrets.token_urlsafe(128)
@@ -25,7 +25,7 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
 
-#Put below app declaration to prevent circular import
+# Put below app declaration to prevent circular import
 from lxconsole import routes
 
 # Create database tables
@@ -35,7 +35,12 @@ with app.app_context():
     #engine = SQLAlchemy.create_engine('sqlite:///db.sqlite3')
     #engine.execute('alter table user add column otp_key String')
 
-#Create cert and key for application. Consider also writing to db, then checking db if exists  then write to file from db
+# Import WebSocket
+from lxconsole.websocket_proxy import init_websocket_proxy
+init_websocket_proxy(app)
+
+
+# Create cert and key for application. Consider also writing to db, then checking db if exists  then write to file from db
 os.system('mkdir -p certs/')
 if not os.path.isfile('certs/client.key') and not os.path.isfile('certs/client.crt'):
     import OpenSSL

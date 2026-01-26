@@ -17,4 +17,4 @@ port = args.port or port
 host = args.host or host
 
 if __name__ == '__main__':
-    app.run(debug=False, host=host, port=port)
+    app.run(debug=False, host=host, port=port, threaded=True)

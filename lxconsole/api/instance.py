@@ -540,14 +540,37 @@ def api_instance_endpoint(endpoint):
     data.update({'width': int(request.form.get('width'))})
     data.update({'height': int(request.form.get('height'))})
     results = requests.post(url, verify=server.ssl_verify, cert=(client_cert, client_key), json=data)
-    results = json.dumps(results.json())
-    results = json.loads(results)
+    # results = json.dumps(results.json())
+    # results = json.loads(results)
 
-    operation = results['operation'] if results['operation'] else ''
-    secret = str(results['metadata']['metadata']['fds']['0']) if str(results['metadata']['metadata']['fds']['0']) else ''
-    control = str(results['metadata']['metadata']['fds']['control']) if str(results['metadata']['metadata']['fds']['control']) else ''
+    # operation = results['operation'] if results['operation'] else ''
+    # secret = str(results['metadata']['metadata']['fds']['0']) if str(results['metadata']['metadata']['fds']['0']) else ''
+    # control = str(results['metadata']['metadata']['fds']['control']) if str(results['metadata']['metadata']['fds']['control']) else ''
 
-    return jsonify({'operation': operation, 'secret': secret, 'control': control})
+    # return jsonify({'operation': operation, 'secret': secret, 'control': control})
+
+    payload = results.json()
+
+    # If LXD returned an error, pass it through to the browser
+    if payload.get("type") == "error":
+        return jsonify(payload), results.status_code
+
+    operation = payload.get("operation") or ""
+
+    fds = (((payload.get("metadata") or {}).get("metadata") or {}).get("fds") or {})
+    secret = str(fds.get("0") or "")
+    control = str(fds.get("control") or "")
+
+    if not operation or not secret:
+        # Defensive: surface unexpected response shapes clearly
+        return jsonify({
+            "type": "error",
+            "error": "Unexpected LXD response (missing operation/secret)",
+            "error_code": 500,
+            "metadata": {"payload": payload},
+        }), 500
+
+    return jsonify({"operation": operation, "secret": secret, "control": control})
   
 
   if endpoint == 'establish_instance_exec_websocket':
@@ -573,14 +596,37 @@ def api_instance_endpoint(endpoint):
     environment.update({'USER': 'root'})
     data.update({'environment': environment})
     results = requests.post(url, verify=server.ssl_verify, cert=(client_cert, client_key), json=data)
-    results = json.dumps(results.json())
-    results = json.loads(results)
+    # results = json.dumps(results.json())
+    # results = json.loads(results)
 
-    operation = results['operation'] if results['operation'] else ''
-    secret = str(results['metadata']['metadata']['fds']['0']) if str(results['metadata']['metadata']['fds']['0']) else ''
-    control = str(results['metadata']['metadata']['fds']['control']) if str(results['metadata']['metadata']['fds']['control']) else ''
+    # operation = results['operation'] if results['operation'] else ''
+    # secret = str(results['metadata']['metadata']['fds']['0']) if str(results['metadata']['metadata']['fds']['0']) else ''
+    # control = str(results['metadata']['metadata']['fds']['control']) if str(results['metadata']['metadata']['fds']['control']) else ''
 
-    return jsonify({'operation': operation, 'secret': secret, 'control': control})
+    # return jsonify({'operation': operation, 'secret': secret, 'control': control})
+
+    payload = results.json()
+
+    # If LXD returned an error, pass it through to the browser
+    if payload.get("type") == "error":
+        return jsonify(payload), results.status_code
+
+    operation = payload.get("operation") or ""
+
+    fds = (((payload.get("metadata") or {}).get("metadata") or {}).get("fds") or {})
+    secret = str(fds.get("0") or "")
+    control = str(fds.get("control") or "")
+
+    if not operation or not secret:
+        # Defensive: surface unexpected response shapes clearly
+        return jsonify({
+            "type": "error",
+            "error": "Unexpected LXD response (missing operation/secret)",
+            "error_code": 500,
+            "metadata": {"payload": payload},
+        }), 500
+
+    return jsonify({"operation": operation, "secret": secret, "control": control})
   
 
   if endpoint == 'export_instance_backup':

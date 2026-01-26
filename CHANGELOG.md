@@ -1,3 +1,8 @@
+# 0.7.0
+ - LXD/Incus websocket connections now requires mTLS (mutual TLS with client certificates), but browsers can't programmatically send client certificates with WebSocket connections. This required a change the architecture so the LXConsole server now proxies the Exec/Console WebSocket connection, connecting to LXD/Incus with the client certificates.
+ - Two additional python requirements: flask-sock==0.7.0 and websocket-client==1.9.0 have been added
+ - Updated Dockerfile to use Python 3.10.19
+
 # 0.6.3
  - Added MFA status on the users page
  - The users page will now only list users for accounts with the list_users_all privilege (Administrator role by default)
